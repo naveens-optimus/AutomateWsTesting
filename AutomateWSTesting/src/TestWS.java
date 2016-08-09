@@ -206,7 +206,11 @@ public class TestWS {
         workbook.write(output_file); //write changes
           
         output_file.close(); 
-
+        
+        //finished the testing
+        System.out.println("All the test cases executed and results are written in the excel file, please read the file to get more info.");
+        System.out.println("System is shutting down now.................................................................................................................");
+        System.out.println("Happy test automation");
 	}
 	
 	
@@ -470,8 +474,15 @@ public class TestWS {
 				break;
 			}
 			
+			
+			
 			//cellCounter++;
 			if(tagCell.getColumnIndex() >= 2){
+				
+				if(tagCell.getStringCellValue().equals("")){
+					continue;
+				}
+				
 				System.out.println("filling response tagValue " + tagCell.getStringCellValue() + "\t\t" );
 				
 				//Get value cell for the tag
