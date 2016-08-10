@@ -18,7 +18,9 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.xerces.impl.xpath.XPath;
 import org.apache.xmlbeans.XmlException;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Scanner;
 
 import javax.activity.InvalidActivityException;
@@ -41,11 +43,12 @@ public class TestWS {
 		
 		FileInputStream fsIP = null;
 		Scanner reader = null;
+		String excelFilePath = null;
 		try{
 			
 			//read excel file path
 			reader = new Scanner(System.in);  
-			String excelFilePath = reader.nextLine(); // Scans the next token of the input as an int.
+			excelFilePath = reader.nextLine(); // Scans the next token of the input as an int.
 			
 			if(excelFilePath != null && !excelFilePath.equals("")){
 				fsIP = new FileInputStream(new File(excelFilePath)); //Read the spreadsheet that needs to be updated
@@ -92,116 +95,137 @@ public class TestWS {
 		}
         WsdlInterface wsdl = wsdls[0];
         
-        //Get first Test case heading row from Excel
-        //Findout the row Number of the row of "TestCase" heading
-        Row tagHeadingRow = findRowByCellData( sheet, "TestCase");
+
+      	//Get active operations from the excel sheet
+      	List<String> activeOperations = getOperationList(sheet);
         
-        //Get response tag heading
-        Row resultTagHeadingRow = findRowByCellData( sheet, "TestResult");
-        
-      	int testCaseRowIndex  = tagHeadingRow.getRowNum();
-      	
-      	int testResultRowIndex = resultTagHeadingRow.getRowNum();
-      	
-      	//iterate over number of test cases
-      	//Get number of test cases
-      	int noOfTestCases = findRowByCellData( sheet, "EndTestCase").getRowNum() - testCaseRowIndex;
-      	
-      	//Which test case has been fired, to be used to update the related TestResult row
-      	int testResultRow = 0;
-      	
-      	//TODO: Make it dynamic so that the loop should work on test case length
-      	for(int i=0; i<noOfTestCases-1 ; i++){
-      		
-      	// move to next row
-            //TODO: Move it to Try/catch
-            testCaseRowIndex += 1;
-            Row testCaseRow = sheet.getRow(testCaseRowIndex);
+      //iterate over all possible Soap requests in the WSDL
+        for (Operation operation : wsdl.getOperationList()) {
+        	
+        	//Get operation Name
+        	String operationName = operation.getName();
+        	//Check if the operation is in the active operation list for the test automation
+            if(!activeOperations.contains(operationName.toLowerCase())){
+            	//No
+            	//move to next operation
+            	continue;
+            }
+        	
             
-          //Check if the test case has to be executed
-    		//testCaseRow.getRowNum();
-    		int isRunIndex = findColumnByCellData( sheet, "Run");
-    		
-    		String isTestCaseToBeExecuted = testCaseRow.getCell(isRunIndex).getStringCellValue();
-    		
-    		//if Yes, fill the possible tag values
-    		if(isTestCaseToBeExecuted.equalsIgnoreCase("y")){
-    			
-    			 //Set next test result row
-    			testResultRow = testCaseRowIndex - tagHeadingRow.getRowNum();
-    			
-	      		//iterate over all possible Soap requests in the WSDL
-		        for (Operation operation : wsdl.getOperationList()) {
-		            WsdlOperation op = (WsdlOperation) operation;
-		            
-		            //add a new Request
-		            WsdlRequest request = op.addNewRequest("Request");
-		            
-		            System.out.println("OP:"+op.getName());
-		            System.out.println(op.createRequest(true));
-		            
-		            
-		            //Get SOap request
-		            XmlHolder xmlHolder = null;
-		            try {
-		            	xmlHolder = new XmlHolder(op.createRequest(true));
-					} catch (XmlException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					};
-		            //
-		            //request.setRequestContent (xmlHolder.getXml());
-					//xmlHolder.declareNamespace("web","http://www.webserviceX.NET");
-					
-					
-		            XmlHolder filledRequest = fillRequest(xmlHolder, sheet, testCaseRow, tagHeadingRow);
-		            
-		            System.out.println("Filled request= " + filledRequest.getXml());
-		            
-		            //replace WSDL request and execute it
-		            if(filledRequest != null){
-			            request.setRequestContent(filledRequest.getXml());
-			            
-			            //execute
-			         // submit the request
-			            WsdlSubmit submit = null;
-						try {
-							submit = (WsdlSubmit) request.submit( new WsdlSubmitContext(op), false );
-						} catch (SubmitException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
-			           
-			            // wait for the response
-			            Response response = submit != null ? submit.getResponse() : null;
-			           
-			            //  print the response
-			            String content = response != null ? response.getContentAsString() : null;
-			            
-			            XmlHolder responseXmlHolder = null;
-						try {
-							responseXmlHolder = new XmlHolder(content);
-						} catch (XmlException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
-			            
-						//Save response in excel
-			            //Save response to next row
-			            writeResponse(responseXmlHolder, resultTagHeadingRow, sheet.getRow(resultTagHeadingRow.getRowNum() + testResultRow));
-			            
-			            System.out.println("Request Response= \n " + content );
-		            }
-		            //System.out.println("Response:");
-		            //System.out.println(op.createResponse(true));
-		        }
-    		}
-      	}
+        	WsdlOperation op = (WsdlOperation) operation;
+            
+            //add a new Request
+            WsdlRequest request = op.addNewRequest("Request");
+            
+            //Get Operation Name
+            System.out.println("Executing request for OP:"+ operationName);
+            System.out.println(op.createRequest(true));
+            
+            
+            //Get SOap request
+            XmlHolder xmlHolder = null;
+            try {
+            	xmlHolder = new XmlHolder(op.createRequest(true));
+			} catch (XmlException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			};
+            
+			//Get user provided Tag details for this request from the excel
+			Row opReqStartRow = findRowByCellData(sheet, operationName.toLowerCase().trim() + "-Request");
+			
+			//Get Test case tags row from Excel for the operation
+			Row tagHeadingRow = sheet.getRow(opReqStartRow.getRowNum() + 1);
+	        
+			//Get user provided Tag details for this request from the excel
+			Row opResponseStartRow = findRowByCellData(sheet, operationName.toLowerCase().trim() + "-Response");
+			
+	        Row resultTagHeadingRow = sheet.getRow(opResponseStartRow.getRowNum() + 1);
+	        
+	      	int testCaseRowIndex  = tagHeadingRow.getRowNum();
+	      	
+	      	int testResultRowIndex = resultTagHeadingRow.getRowNum();
+	      	
+	      	//iterate over number of test cases
+	      	//Get number of test cases
+	      	int noOfTestCases = findRowByCellData( sheet,  operationName.toLowerCase().trim() + "-EndTestCase").getRowNum() - testCaseRowIndex;
+	      	
+	      	//Which test case has been fired, to be used to update the related TestResult row
+	      	int testResultRow = 0;
+	      	
+	      	//To be used for checking if the test case has to be executed
+	      	Cell runCell = findColumnByCellData( tagHeadingRow, "Run", 0);
+	      	
+	      	//TODO: Make it dynamic so that the loop should work on test case length
+	      	for(int i=0; i<noOfTestCases-1 ; i++){
+	      		
+	      	// move to next row
+	            //TODO: Move it to Try/catch
+	            testCaseRowIndex += 1;
+	            Row testCaseRow = sheet.getRow(testCaseRowIndex);
+	            
+	          //Check if the test case has to be executed
+	    		
+	    		String isTestCaseToBeExecuted = testCaseRow.getCell(runCell.getColumnIndex()).getStringCellValue();
+	    		
+	    		//if Yes, fill the possible tag values
+	    		if(isTestCaseToBeExecuted.equalsIgnoreCase("y")){
+	    			
+	    			 //Set next test result row
+	    			testResultRow = testCaseRowIndex - tagHeadingRow.getRowNum();
+	    			
+	    			XmlHolder filledRequest = fillRequest(xmlHolder, sheet, testCaseRow, tagHeadingRow);
+	                
+	                System.out.println("Filled request= " + filledRequest.getXml());
+	                
+	                //replace WSDL request and execute it
+	                if(filledRequest != null){
+	    	            request.setRequestContent(filledRequest.getXml().replace("?", ""));
+	    	            
+	    	            //execute
+	    	         // submit the request
+	    	            WsdlSubmit submit = null;
+	    				try {
+	    					submit = (WsdlSubmit) request.submit( new WsdlSubmitContext(op), false );
+	    				} catch (SubmitException e) {
+	    					// TODO Auto-generated catch block
+	    					e.printStackTrace();
+	    				}
+	    	           
+	    	            // wait for the response
+	    	            Response response = submit != null ? submit.getResponse() : null;
+	    	           
+	    	            //  print the response
+	    	            String content = response != null ? response.getContentAsString() : null;
+	    	            
+	    	            XmlHolder responseXmlHolder = null;
+	    				try {
+	    					responseXmlHolder = new XmlHolder(content);
+	    				} catch (XmlException e) {
+	    					// TODO Auto-generated catch block
+	    					e.printStackTrace();
+	    				}
+	    	            
+	    				//Save response in excel
+	    	            //Save response to next row
+	    	            writeResponse(responseXmlHolder, resultTagHeadingRow, sheet.getRow(resultTagHeadingRow.getRowNum() + testResultRow));
+	    	            
+	    	            System.out.println("Request Response= \n " + content );
+	                }
+	    		}
+	      	}
+	      	
+            
+            //System.out.println("Response:");
+            //System.out.println(op.createResponse(true));
+        }
+        
+        
       	
       	//Save file and close
       	fsIP.close(); //Close the InputStream
         
-        FileOutputStream output_file = new FileOutputStream(new File("C:\\temp\\Webservice_Automation_Input_TestSuit.xls"));  //Open FileOutputStream to write updates
+        FileOutputStream output_file = new FileOutputStream(new File(excelFilePath));  //Open FileOutputStream to write updates
           
         workbook.write(output_file); //write changes
           
@@ -246,13 +270,13 @@ public class TestWS {
 					try {
 						switch( valCell.getCellType() ) {
 							case Cell.CELL_TYPE_BOOLEAN:
-								System.out.println(tagCell.getBooleanCellValue() + "\t\t");
-								//request.setNodeValue("//web:" + tagCell.getStringCellValue() , valCell.getBooleanCellValue());
+								//System.out.println(tagCell.getBooleanCellValue() + "\t\t");
+								request.setNodeValue("//*:" + tagCell.getStringCellValue() , valCell.getBooleanCellValue());
 								break;
 							case Cell.CELL_TYPE_NUMERIC:
-								System.out.println(tagCell.getNumericCellValue() + "\t\t");
+								//System.out.println(tagCell.getNumericCellValue() + "\t\t");
 							
-								//request.setNodeValue("//web:" + tagCell.getStringCellValue() , valCell.getNumericCellValue());
+								request.setNodeValue("//*:" + tagCell.getStringCellValue() , valCell.getNumericCellValue());
 							
 								break;
 							case Cell.CELL_TYPE_STRING:
@@ -400,7 +424,7 @@ public class TestWS {
 	    for (Row row : sheet) {
 	        for (Cell cell : row) {
 	            if (cell.getCellType() == Cell.CELL_TYPE_STRING) {
-	                if (cell.getRichStringCellValue().getString().trim().equals(cellContent)) {
+	                if (cell.getRichStringCellValue().getString().trim().toLowerCase().equals(cellContent.toLowerCase())) {
 	                    return row;
 	                }
 	            }
@@ -422,6 +446,51 @@ public class TestWS {
 	    return 0;
 	}
 	
+	/**
+	 * Gets a cell from the HSSFSheet using the cellContent
+	 * @param sheet
+	 * @param cellContent
+	 * @param afterNoOfPlaces - Gets cell after or before the provided position, 0 = same cell with the cell content
+	 * @return Cell
+	 */
+	private static Cell findColumnByCellData(HSSFSheet sheet, String cellContent, int afterNoOfPlaces) {
+	    for (Row row : sheet) {
+	        for (Cell cell : row) {
+	            if (cell.getCellType() == Cell.CELL_TYPE_STRING) {
+	                if (cell.getRichStringCellValue().getString().trim().equals(cellContent)) {
+	                    return cell.getRow().getCell( cell.getColumnIndex() + afterNoOfPlaces );
+	                }
+	            }
+	        }
+	    }               
+	    return null;
+	}
+	
+	/**
+	 * Gets a cell from the Row using the cellContent
+	 * @param sheet
+	 * @param cellContent
+	 * @param afterNoOfPlaces - Gets cell after or before the provided position, 0 = same cell with the cell content
+	 * @return Cell
+	 */
+	private static Cell findColumnByCellData(Row row, String cellContent, int afterNoOfPlaces) {
+	   for (Cell cell : row) {
+	            if (cell.getCellType() == Cell.CELL_TYPE_STRING) {
+	                if (cell.getRichStringCellValue().getString().toLowerCase().trim().equals(cellContent.toLowerCase())) {
+	                    return cell.getRow().getCell( cell.getColumnIndex() + afterNoOfPlaces );
+	                }
+	            }
+	        }               
+	    return null;
+	}
+	
+	/**
+	 * 
+	 * @param sheet
+	 * @param cellContent
+	 * @param afterPosition
+	 * @return
+	 */
 	private static Cell findNextCellByCellData(HSSFSheet sheet, String cellContent, int afterPosition) {
 	    for (Row row : sheet) {
 	        for (Cell cell : row) {
@@ -435,6 +504,13 @@ public class TestWS {
 	    return null;
 	}
 	
+	/**
+	 * 
+	 * @param sheet
+	 * @param cellContent
+	 * @param downRows
+	 * @return
+	 */
 	private static Cell findDownCellByCellData(HSSFSheet sheet, String cellContent, int downRows) {
 	    for (Row row : sheet) {
 	        for (Cell cell : row) {
@@ -448,6 +524,12 @@ public class TestWS {
 	    return null;
 	}
 
+	/***
+	 * 
+	 * @param response
+	 * @param responseTagRow
+	 * @param responseRow
+	 */
 	private static void writeResponse(XmlHolder response, Row responseTagRow, Row responseRow){
 		
 		//Get response value for Response tags 
@@ -506,6 +588,43 @@ public class TestWS {
 		}
 		System.out.println("Response write done");
 		
+	}
+	
+	
+	/**
+	 * 
+	 * @param sheet
+	 * @return
+	 */
+	private static List<String> getOperationList(HSSFSheet sheet){
+		List<String> operationList = new ArrayList<String>();
+		
+		//Get operation list
+		//findout the cell below the cell with value OperationName
+		Cell startCell = findDownCellByCellData( sheet, "OperationName", 1);
+		
+		//get the start index of the iterator
+		int startIndex = startCell.getRowIndex();
+		
+		//get the last index
+		Cell endCell = findColumnByCellData(sheet, "EndOperation", 0);
+		
+		int endIndex = endCell.getRowIndex();
+		
+		//iterate on the range of operations
+		for(; startIndex < endIndex ; startIndex++){
+			
+			//Check if operation is active
+			//if yes, add it in the list 
+			if(startCell.getRow().getCell(startCell.getColumnIndex() + 1).getStringCellValue().equalsIgnoreCase("Y")){
+				operationList.add(startCell.getStringCellValue().trim().toLowerCase());
+				
+			}
+			
+			//move to down cell
+			startCell = sheet.getRow(startCell.getRowIndex()+1).getCell(startCell.getColumnIndex());
+		}
+		return operationList;
 	}
 }
 
